@@ -1,7 +1,7 @@
 /*
  * PrivacyControls companion for the original RainTweak v1.2.0 IPA.
  * This script runs AFTER the bundled/remote stock Rain, and never overwrites Rain.
- * Its four preferences are edited in RainTweak's shake-to-open Recovery Menu.
+ * Six independent preferences are edited in RainTweak's shake-to-open Recovery Menu.
  */
 (function () {
     "use strict";
@@ -11,7 +11,14 @@
     var BLANK_NAME = "\u00a0";
 
     function readSettings() {
-        var defaults = { hideMessageAvatars: false, hideAllAvatars: false, hideUsername: false, hideDisplayName: false };
+        var defaults = {
+            hideMessageAvatars: false,
+            hideAllAvatars: false,
+            hideUsername: false,
+            hideDisplayName: false,
+            hideGuildTags: false,
+            hideEmbedIcons: false
+        };
         try {
             var bridge = g.__RAIN_BRIDGE_CALL_SYNC__;
             if (typeof bridge !== "function") return defaults;
@@ -29,7 +36,7 @@
         if (typeof after !== "function") return;
 
         var flags = readSettings();
-        if (!flags.hideMessageAvatars && !flags.hideAllAvatars && !flags.hideUsername && !flags.hideDisplayName) {
+        if (!flags.hideMessageAvatars && !flags.hideAllAvatars && !flags.hideUsername && !flags.hideDisplayName && !flags.hideGuildTags && !flags.hideEmbedIcons) {
             installed = true;
             return;
         }
@@ -59,8 +66,82 @@
             } catch (e) { return false; }
         }
 
+        // Exact fields seen on Discord's native message row. Clear to null,
+        // never to an empty string: a blank image URI can break native rendering.
+        var GUILD_TAG_KEYS = [
+            "clanTag", "clanTagGuildId", "clanBadgeUrl",
+            "tagText", "tagAccessibilityLabel", "tagVerified", "tagType",
+            "tagIconUrl", "opTagText", "connectionsRoleTag"
+        ];
+        var SMALL_ICON_KEYS = [
+            "icon_url", "proxy_icon_url", "iconUrl", "iconURL",
+            "proxyIconUrl", "proxyIconURL", "favicon", "faviconURL", "faviconUrl",
+            "avatarURL", "avatarUrl", "avatar_url"
+        ];
+        function clearFields(source, keys) {
+            if (!source || typeof source !== "object" || Array.isArray(source)) return source;
+            var copy = null;
+            keys.forEach(function (key) {
+                if (source[key] != null) {
+                    if (!copy) copy = Object.assign({}, source);
+                    copy[key] = null;
+                }
+            });
+            return copy || source;
+        }
+        // Only known *small logo* slots of a link preview are touched.
+        // Title, description, URL, author name, thumbnail, image and video
+        // remain intact so shared links and forwarded media still work.
+        function privateEmbed(embed) {
+            if (!embed || typeof embed !== "object" || Array.isArray(embed)) return embed;
+            var result = clearFields(embed, [
+                "iconUrl", "iconURL", "icon_url", "favicon", "faviconURL", "faviconUrl"
+            ]);
+            ["author", "provider", "footer"].forEach(function (part) {
+                if (!embed[part] || typeof embed[part] !== "object") return;
+                var next = clearFields(embed[part], SMALL_ICON_KEYS);
+                if (next !== embed[part]) {
+                    if (result === embed) result = Object.assign({}, embed);
+                    result[part] = next;
+                }
+            });
+            return result;
+        }
+        function privateEmbedList(list) {
+            if (!Array.isArray(list)) return list;
+            var changed = false;
+            var result = list.map(function (item) {
+                var next = privateEmbed(item);
+                if (next !== item) changed = true;
+                return next;
+            });
+            return changed ? result : list;
+        }
+        function privateSnapshot(snapshot, depth) {
+            if (!snapshot || typeof snapshot !== "object" || depth > 3) return snapshot;
+            var result = snapshot;
+            // Discord forwards carry a message_snapshots/messageSnapshots array.
+            // A snapshot typically has message.embeds, without the original author.
+            ["message", "messageSnapshot", "message_snapshot", "snapshot"].forEach(function (key) {
+                if (!snapshot[key] || typeof snapshot[key] !== "object") return;
+                var next = privateMessage(snapshot[key], depth + 1);
+                if (next !== snapshot[key]) {
+                    if (result === snapshot) result = Object.assign({}, snapshot);
+                    result[key] = next;
+                }
+            });
+            if (Array.isArray(snapshot.embeds)) {
+                var embeds = privateEmbedList(snapshot.embeds);
+                if (embeds !== snapshot.embeds) {
+                    if (result === snapshot) result = Object.assign({}, snapshot);
+                    result.embeds = embeds;
+                }
+            }
+            return result;
+        }
+
         function privateMessage(message, depth) {
-            if (!message || typeof message !== "object" || depth > 2) return message;
+            if (!message || typeof message !== "object" || depth > 4) return message;
             var next = Object.assign({}, message);
             var changed = false;
             if ((flags.hideMessageAvatars || flags.hideAllAvatars) && typeof next.avatarURL === "string") {
@@ -70,6 +151,34 @@
             if (flags.hideMessageAvatars || flags.hideAllAvatars) {
                 ["avatarDecorationURL", "avatarDecorationUrl"].forEach(function (key) {
                     if (next[key] != null) { next[key] = null; changed = true; }
+                });
+            }
+            if (flags.hideGuildTags) {
+                GUILD_TAG_KEYS.forEach(function (key) {
+                    if (next[key] != null) { next[key] = null; changed = true; }
+                });
+            }
+            if (flags.hideEmbedIcons) {
+                if (Array.isArray(message.embeds)) {
+                    var embeds = privateEmbedList(message.embeds);
+                    if (embeds !== message.embeds) { next.embeds = embeds; changed = true; }
+                }
+                // Rendered forwards can present either camelCase or wire-format fields.
+                ["messageSnapshots", "message_snapshots", "snapshots"].forEach(function (key) {
+                    if (!Array.isArray(message[key])) return;
+                    var any = false;
+                    var snapshots = message[key].map(function (snapshot) {
+                        var value = privateSnapshot(snapshot, depth + 1);
+                        if (value !== snapshot) any = true;
+                        return value;
+                    });
+                    if (any) { next[key] = snapshots; changed = true; }
+                });
+                // Some forwarded previews are stored as one nested payload.
+                ["forwardedMessage", "forwarded_message", "messageSnapshot"].forEach(function (key) {
+                    if (!message[key] || typeof message[key] !== "object") return;
+                    var value = privateSnapshot(message[key], depth + 1);
+                    if (value !== message[key]) { next[key] = value; changed = true; }
                 });
             }
             if (typeof next.username === "string") {
@@ -88,7 +197,7 @@
             return changed ? next : message;
         }
 
-        if (flags.hideMessageAvatars || flags.hideAllAvatars || flags.hideDisplayName || flags.hideUsername) {
+        if (flags.hideMessageAvatars || flags.hideAllAvatars || flags.hideDisplayName || flags.hideUsername || flags.hideGuildTags || flags.hideEmbedIcons) {
             var manager = find(function () { return rain.metro.findByName("RowManager"); });
             if (manager && manager.prototype) {
                 hook(manager.prototype, "generate", function (_args, row) {
