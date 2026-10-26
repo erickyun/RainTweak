@@ -105,6 +105,8 @@ static NSDictionary<NSString *, BridgeHandler> *bridgeHandlers(void)
                     @"hideAllAvatars": @([defaults boolForKey:@"rainPrivacy.hideAllAvatars"]),
                     @"hideUsername": @([defaults boolForKey:@"rainPrivacy.hideUsername"]),
                     @"hideDisplayName": @([defaults boolForKey:@"rainPrivacy.hideDisplayName"]),
+                    @"hideGuildTags": @([defaults boolForKey:@"rainPrivacy.hideGuildTags"]),
+                    @"hideEmbedIcons": @([defaults boolForKey:@"rainPrivacy.hideEmbedIcons"]),
                 };
             },
             @"applemusic.get": ^id(NSArray *args) {
