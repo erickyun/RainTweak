@@ -23,6 +23,13 @@ jobs:
         with:
           ref: feature/stock-ipa-privacycontrols
 
+      - name: Validate standalone privacy addon and its message transformations
+        run: |
+          set -euo pipefail
+          node --check addons/RainPrivacyPlugin.js
+          node --check tests/privacy-addon.test.cjs
+          node tests/privacy-addon.test.cjs
+
       - name: Download verified working RainTweak v1.2.0 IPA
         run: |
           set -euo pipefail
