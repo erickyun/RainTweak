@@ -131,7 +131,7 @@
                     return rain.metro.findByStoreName("RelationshipStore");
                 });
                 hook(relationshipStore, "getNickname", function (args, result) {
-                    return args && typeof args[0] === "string" && /^\\d{17,20}$/.test(args[0])
+                    return args && typeof args[0] === "string" && /^\d{17,20}$/.test(args[0])
                         && (result == null || typeof result === "string") ? BLANK_NAME : result;
                 });
             }
