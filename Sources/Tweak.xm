@@ -98,6 +98,17 @@ static NSDictionary<NSString *, BridgeHandler> *bridgeHandlers(void)
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         handlers = @{
+            @"privacy.get": ^id(NSArray *args) {
+                NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+                return @{
+                    @"hideMessageAvatars": @([defaults boolForKey:@"rainPrivacy.hideMessageAvatars"]),
+                    @"hideAllAvatars": @([defaults boolForKey:@"rainPrivacy.hideAllAvatars"]),
+                    @"hideUsername": @([defaults boolForKey:@"rainPrivacy.hideUsername"]),
+                    @"hideDisplayName": @([defaults boolForKey:@"rainPrivacy.hideDisplayName"]),
+                    @"hideGuildTags": @([defaults boolForKey:@"rainPrivacy.hideGuildTags"]),
+                    @"hideEmbedIcons": @([defaults boolForKey:@"rainPrivacy.hideEmbedIcons"]),
+                };
+            },
             @"applemusic.get": ^id(NSArray *args) {
                 MPMediaLibraryAuthorizationStatus authorization = [MPMediaLibrary authorizationStatus];
 
@@ -316,6 +327,15 @@ static void executePreloads(jsi::Runtime &runtime, NSURL *rainDir)
     if (bundle && bundle.length > 0)
     {
         [JSI evaluate:bundle tag:@"rain:bundle" runtime:runtime];
+
+        // Evaluate the small privacy addon without replacing the working,
+        // version-compatible Rain release already selected by the loader.
+        NSURL *addonURL = [[NSBundle mainBundle] URLForResource:@"RainPrivacyPlugin" withExtension:@"js"];
+        NSData *addon = addonURL ? [NSData dataWithContentsOfURL:addonURL] : nil;
+        if (addon.length > 0) {
+            [JSI evaluate:addon tag:@"rain:privacy-addon" runtime:runtime];
+        }
+
         executePreloads(runtime, rainDir);
     }
     else

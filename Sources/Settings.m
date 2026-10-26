@@ -38,7 +38,7 @@
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return 10;
+    return 16;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView
@@ -69,7 +69,13 @@
             @"title" : @"Open GitHub Issue",
             @"icon" : @"exclamationmark.bubble",
             @"destructive" : @NO
-        }
+        },
+        @{@"title": @"Hide Message Avatars", @"icon": @"person.crop.circle.badge.xmark", @"destructive": @NO},
+        @{@"title": @"Hide All Avatars", @"icon": @"person.crop.circle.fill.badge.xmark", @"destructive": @NO},
+        @{@"title": @"Hide Username", @"icon": @"at", @"destructive": @NO},
+        @{@"title": @"Hide Display Name", @"icon": @"textformat", @"destructive": @NO},
+        @{@"title": @"Hide Guild Tags", @"icon": @"tag.slash", @"destructive": @NO},
+        @{@"title": @"Hide Embed/Forward Icons", @"icon": @"link", @"destructive": @NO}
     ];
 
     NSDictionary *option = options[indexPath.row];
@@ -86,12 +92,33 @@
     if (indexPath.row == 0) {
         cell.textLabel.text = isSafeModeEnabled() ? @"Disable Safe Mode" : @"Enable Safe Mode";
     }
+    if (indexPath.row >= 10 && indexPath.row <= 15) {
+        NSArray *keys = @[@"rainPrivacy.hideMessageAvatars", @"rainPrivacy.hideAllAvatars",
+                          @"rainPrivacy.hideUsername", @"rainPrivacy.hideDisplayName",
+                          @"rainPrivacy.hideGuildTags", @"rainPrivacy.hideEmbedIcons"];
+        BOOL enabled = [[NSUserDefaults standardUserDefaults] boolForKey:keys[indexPath.row - 10]];
+        cell.accessoryType = enabled ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+    } else {
+        cell.accessoryType = UITableViewCellAccessoryNone;
+    }
 
     return cell;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+    if (indexPath.row >= 10 && indexPath.row <= 15) {
+        NSArray *keys = @[@"rainPrivacy.hideMessageAvatars", @"rainPrivacy.hideAllAvatars",
+                          @"rainPrivacy.hideUsername", @"rainPrivacy.hideDisplayName",
+                          @"rainPrivacy.hideGuildTags", @"rainPrivacy.hideEmbedIcons"];
+        NSString *key = keys[indexPath.row - 10];
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        [defaults setBool:![defaults boolForKey:key] forKey:key];
+        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        // Fully exit and reopen Discord to apply these startup-time JavaScript hooks.
+        return;
+    }
 
     if (indexPath.row == 0) {
         toggleSafeMode();
