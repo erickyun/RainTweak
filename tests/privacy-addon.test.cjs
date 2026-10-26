@@ -113,7 +113,7 @@ assert.equal(icons.clanTag, original.clanTag);
 eq(input, original);
 
 const avatars = build({ hideMessageAvatars: true }).row(input);
-assert.match(avatars.avatarURL, /^data:image\\/png;base64,/);
+assert.match(avatars.avatarURL, /^data:image\/png;base64,/);
 assert.equal(avatars.clanTag, original.clanTag);
 eq(avatars.embeds, original.embeds);
 
@@ -129,6 +129,6 @@ assert.equal(otherHandle.username, "Visible Name");
 const all = build({ hideGuildTags: true, hideEmbedIcons: true, hideAllAvatars: true }).row(input);
 assert.equal(all.clanTag, null);
 assert.equal(all.embeds[0].author.icon_url, null);
-assert.match(all.avatarURL, /^data:image\\/png;base64,/);
+assert.match(all.avatarURL, /^data:image\/png;base64,/);
 eq(input, original);
 console.log("PrivacyControls: all isolated and combined row tests passed");
