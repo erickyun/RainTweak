@@ -1,0 +1,131 @@
+name: Build Discord IPA with Rain PrivacyControls
+run-name: Assemble Discord PrivacyControls IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "Direct HTTPS download URL for a decrypted Discord IPA"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout RainTweak (custom embedded Rain loader)
+        uses: actions/checkout@v4
+
+      - name: Checkout privacy-enabled Rain source
+        uses: actions/checkout@v4
+        with:
+          repository: erickyun/rain
+          ref: feature/hide-avatars-and-names
+          path: rain
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Rain dependencies
+        working-directory: rain
+        run: bun install --frozen-lockfile
+
+      - name: Build Rain bundle with PrivacyControls
+        working-directory: rain
+        run: |
+          node scripts/build.mjs
+          test -s dist/rain.js
+          ls -lh dist/rain.js
+
+      - name: Prepare Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Set GNU Make path
+        run: echo "PATH=$(brew --prefix make)/libexec/gnubin:$PATH" >> "$GITHUB_ENV"
+
+      - name: Compile custom RainTweak
+        run: |
+          set -euo pipefail
+          make package
+          DEB="$(find packages -type f -name '*iphoneos-arm64.deb' -print -quit)"
+          test -n "$DEB"
+          test -s "$DEB"
+          echo "RAIN_DEB=$DEB" >> "$GITHUB_ENV"
+
+      - name: Download decrypted Discord IPA
+        env:
+          SOURCE_IPA_URL: ${{ inputs.ipa_url }}
+        run: |
+          set -euo pipefail
+          if [[ "$SOURCE_IPA_URL" != https://* ]]; then
+            echo "Provide a direct HTTPS IPA URL" >&2
+            exit 1
+          fi
+          curl --fail --location --retry 2 --silent --show-error \
+            --output "$RUNNER_TEMP/Discord-decrypted.ipa" "$SOURCE_IPA_URL"
+          test -s "$RUNNER_TEMP/Discord-decrypted.ipa"
+          unzip -tq "$RUNNER_TEMP/Discord-decrypted.ipa" >/dev/null
+
+      - name: Embed privacy-enabled Rain script in decrypted IPA
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from zipfile import ZipFile, ZIP_DEFLATED
+          from pathlib import Path
+          import os, shutil, plistlib
+
+          inp = Path(os.environ["RUNNER_TEMP"]) / "Discord-decrypted.ipa"
+          out = Path(os.environ["RUNNER_TEMP"]) / "Discord-prepared.ipa"
+          js = Path("rain/dist/rain.js")
+          assert js.is_file() and js.stat().st_size > 0, "Custom Rain bundle missing"
+          with ZipFile(inp) as z:
+              candidates = {p.split("/")[1] for p in z.namelist()
+                            if p.startswith("Payload/") and ".app/" in p
+                            and p.split("/")[1].endswith(".app")}
+              if len(candidates) != 1:
+                  raise SystemExit(f"Expected one iOS app, found: {sorted(candidates)}")
+              app = candidates.pop()
+              info = plistlib.loads(z.read(f"Payload/{app}/Info.plist"))
+              print("Discord version:", info.get("CFBundleShortVersionString", "unknown"))
+              print("App bundle:", info.get("CFBundleIdentifier", "unknown"))
+          shutil.copyfile(inp, out)
+          embedded = f"Payload/{app}/RainPrivacy.js"
+          with ZipFile(out, "a", compression=ZIP_DEFLATED) as z:
+              if embedded in z.namelist():
+                  raise SystemExit("IPA already has an embedded RainPrivacy.js")
+              z.write(js, embedded)
+          print("Embedded:", embedded)
+          PY
+          unzip -tq "$RUNNER_TEMP/Discord-prepared.ipa" >/dev/null
+
+      - name: Install IPA injector (cyan)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/cyan-venv"
+          "$RUNNER_TEMP/cyan-venv/bin/pip" install --upgrade pip
+          "$RUNNER_TEMP/cyan-venv/bin/pip" install \
+            'https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip' Pillow lief
+
+      - name: Inject RainTweak into Discord
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/cyan-venv/bin/cyan" -uwsgq \
+            -i "$RUNNER_TEMP/Discord-prepared.ipa" \
+            -o "Discord-Rain-PrivacyControls.ipa" \
+            -f "$RAIN_DEB"
+          test -s Discord-Rain-PrivacyControls.ipa
+          unzip -tq Discord-Rain-PrivacyControls.ipa >/dev/null
+          unzip -Z1 Discord-Rain-PrivacyControls.ipa | grep -q '^Payload/[^/]\+\.app/RainPrivacy\.js$'
+          echo "Successfully assembled IPA. Use ESign to sign it before installing."
+
+      - name: Upload unsigned, injected IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Discord-Rain-PrivacyControls-IPA
+          path: Discord-Rain-PrivacyControls.ipa
+          if-no-files-found: error
+          retention-days: 7

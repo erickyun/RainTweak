@@ -310,8 +310,15 @@ static void executePreloads(jsi::Runtime &runtime, NSURL *rainDir)
     NSURL *rainDir = getRainDirectory();
     injectPreBundle(runtime);
 
-    NSURL *bundleFileURL = [rainDir URLByAppendingPathComponent:@"bundle.js"];
-    NSData *bundle = [NSData dataWithContentsOfURL:bundleFileURL];
+    // Bundled custom Rain takes priority over any cached/downloaded bundle.
+    // Kept inside Discord.app by the PrivacyControls IPA builder.
+    NSURL *embeddedBundleURL = [[NSBundle mainBundle] URLForResource:@"RainPrivacy" withExtension:@"js"];
+    NSData *bundle = embeddedBundleURL ? [NSData dataWithContentsOfURL:embeddedBundleURL] : nil;
+    if (!bundle || bundle.length == 0)
+    {
+        NSURL *bundleFileURL = [rainDir URLByAppendingPathComponent:@"bundle.js"];
+        bundle = [NSData dataWithContentsOfURL:bundleFileURL];
+    }
 
     if (bundle && bundle.length > 0)
     {
