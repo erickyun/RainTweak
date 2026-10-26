@@ -60,7 +60,7 @@ def main():
         output.unlink()
     with ZipFile(stock) as original:
         entries = original.namelist()
-        apps = {p.split("/")[1] for p in entries if re.match(r"^Payload/[^/]+\\.app/Info\\.plist$", p)}
+        apps = {p.split("/")[1] for p in entries if re.match(r"^Payload/[^/]+\.app/Info\.plist$", p)}
         if len(apps) != 1:
             raise RuntimeError(f"Expected one iOS app; found {apps}")
         app = apps.pop()
