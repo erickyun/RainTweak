@@ -45,6 +45,9 @@ jobs:
       - name: Prepare Theos
         uses: Randomblock1/theos-action@v1
 
+      - name: Set GNU Make path
+        run: echo "PATH=$(brew --prefix make)/libexec/gnubin:$PATH" >> "$GITHUB_ENV"
+
       - name: Compile custom RainTweak
         run: |
           set -euo pipefail
@@ -102,14 +105,15 @@ jobs:
 
       - name: Install IPA injector (cyan)
         run: |
-          python3 -m pip install --break-system-packages --upgrade pip
-          python3 -m pip install --break-system-packages --force-reinstall \
+          python3 -m venv "$RUNNER_TEMP/cyan-venv"
+          "$RUNNER_TEMP/cyan-venv/bin/pip" install --upgrade pip
+          "$RUNNER_TEMP/cyan-venv/bin/pip" install \
             'https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip' Pillow lief
 
       - name: Inject RainTweak into Discord
         run: |
           set -euo pipefail
-          cyan -uwsgq \
+          "$RUNNER_TEMP/cyan-venv/bin/cyan" -uwsgq \
             -i "$RUNNER_TEMP/Discord-prepared.ipa" \
             -o "Discord-Rain-PrivacyControls.ipa" \
             -f "$RAIN_DEB"
