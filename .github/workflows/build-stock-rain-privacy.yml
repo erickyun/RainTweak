@@ -1,0 +1,65 @@
+name: Stock RainTweak IPA + PrivacyControls
+run-name: Patch working RainTweak v1.2.0 IPA with local privacy switches
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-stock-rain-privacy.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    name: Preserve stock Discord and Rain; replace RainTweak only
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout PrivacyControls native addon source
+        uses: actions/checkout@v4
+        with:
+          ref: feature/stock-ipa-privacycontrols
+
+      - name: Download verified working RainTweak v1.2.0 IPA
+        run: |
+          set -euo pipefail
+          curl -fLsS --retry 3 \
+            https://github.com/ra1ncord/RainTweak/releases/download/v1.2.0/RainTweak.ipa \
+            -o "$RUNNER_TEMP/RainTweak-stock.ipa"
+          echo "98225b128f99c0ac0ffe810ddcb781c73f01da4ce56dbf640a52cf84df0d6549  $RUNNER_TEMP/RainTweak-stock.ipa" | shasum -a 256 -c -
+          unzip -tq "$RUNNER_TEMP/RainTweak-stock.ipa" >/dev/null
+
+      - name: Prepare Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Set GNU Make path
+        run: echo "PATH=$(brew --prefix make)/libexec/gnubin:$PATH" >> "$GITHUB_ENV"
+
+      - name: Build RainTweak native library with PrivacyControls bridge
+        run: |
+          set -euo pipefail
+          make package
+          DEB="$(find packages -type f -name '*iphoneos-arm64.deb' -print -quit)"
+          test -s "$DEB"
+          echo "DEB_PATH=$DEB" >> "$GITHUB_ENV"
+
+      - name: Replace library in working IPA and embed small JS addon
+        run: |
+          set -euo pipefail
+          python3 scripts/embed_privacy_into_stock_ipa.py \
+            "$RUNNER_TEMP/RainTweak-stock.ipa" \
+            "$DEB_PATH" \
+            addons/RainPrivacyPlugin.js \
+            "RainTweak-PrivacyControls.ipa"
+          unzip -tq RainTweak-PrivacyControls.ipa >/dev/null
+
+      - name: Upload IPA for ESign signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: RainTweak-PrivacyControls-Stock-IPA
+          path: RainTweak-PrivacyControls.ipa
+          if-no-files-found: error
+          retention-days: 7
